@@ -385,6 +385,7 @@ class MainWindow(QMainWindow):
         self.batch_image_paths: list[str] = []
         self.batch_output_dir: str = ""
         self.batch_results: list[tuple[str, str]] = []  # (path, tags)
+        self._auto_save_batch: bool = True   # 批量自动保存
 
         self._init_ui()
         self._detect_device()
@@ -731,6 +732,10 @@ class SingleImageTab(QWidget):
         self.save_json_btn.setEnabled(False)
         result_btns.addWidget(self.save_json_btn)
 
+        self.auto_save_single = QCheckBox("自动保存 .txt 到原图目录")
+        self.auto_save_single.setChecked(False)
+        result_btns.addWidget(self.auto_save_single)
+
         result_btns.addStretch()
         right_layout.addLayout(result_btns)
 
@@ -805,6 +810,18 @@ class SingleImageTab(QWidget):
             self.copy_btn.setEnabled(True)
             self.save_btn.setEnabled(True)
             self.save_json_btn.setEnabled(True)
+
+            # ── 单图自动保存 ──
+            if self.auto_save_single.isChecked() and self.mw.current_image_path:
+                try:
+                    txt_path = os.path.join(
+                        os.path.dirname(self.mw.current_image_path),
+                        Path(self.mw.current_image_path).stem + ".txt"
+                    )
+                    with open(txt_path, "w", encoding="utf-8") as f:
+                        f.write(tag_text)
+                except Exception:
+                    pass
 
         except Exception as e:
             QMessageBox.critical(self, "打标失败", str(e))
@@ -974,6 +991,11 @@ class BatchImageTab(QWidget):
         self.batch_size_spin.setValue(8)
         control_layout.addWidget(self.batch_size_spin, 2, 4)
 
+        # 自动保存复选框
+        self.auto_save_check = QCheckBox("自动保存 .txt 到图片目录")
+        self.auto_save_check.setChecked(True)
+        control_layout.addWidget(self.auto_save_check, 3, 0, 1, 3)
+
         layout.addWidget(control)
 
         # ── 中间：文件列表 + 进度 ──
@@ -1043,7 +1065,7 @@ class BatchImageTab(QWidget):
 
         bottom.addStretch()
 
-        self.save_all_btn = QPushButton("💾 保存所有结果")
+        self.save_all_btn = QPushButton("💾 导出合并文件")
         self.save_all_btn.setEnabled(False)
         self.save_all_btn.clicked.connect(self._on_save_all)
         bottom.addWidget(self.save_all_btn)
@@ -1155,6 +1177,19 @@ class BatchImageTab(QWidget):
         img_path = self.file_list.item(idx).data(Qt.ItemDataRole.UserRole)
         self._batch_results.append((img_path, tags))
 
+        # ── 自动保存 .txt ──
+        if self.auto_save_check.isChecked() and tags and not tags.startswith("[ERROR]"):
+            try:
+                output_dir = self.output_input.text().strip()
+                if output_dir and os.path.isdir(output_dir):
+                    txt_path = os.path.join(output_dir, Path(img_path).stem + ".txt")
+                else:
+                    txt_path = os.path.join(os.path.dirname(img_path), Path(img_path).stem + ".txt")
+                with open(txt_path, "w", encoding="utf-8") as f:
+                    f.write(tags)
+            except Exception:
+                pass  # 自动保存失败不中断流程
+
         # 更新进度详情
         tag_count = len(tags.split(", ")) if tags else 0
         self.progress_detail.append(
@@ -1190,6 +1225,14 @@ class BatchImageTab(QWidget):
         fmt = self.format_combo.currentIndex()
 
         if fmt == 0:  # 每图一个 .txt
+            if self.auto_save_check.isChecked():
+                QMessageBox.information(
+                    self, "提示",
+                    "自动保存已开启，每张图片的 .txt 已经写入到图片所在目录。\n"
+                    "如需重新写入，请取消勾选\"自动保存\"后再次点击导出。"
+                )
+                return
+            saved = 0
             for img_path, tags in self._batch_results:
                 if output_dir:
                     txt_path = os.path.join(output_dir, Path(img_path).stem + ".txt")
@@ -1198,12 +1241,15 @@ class BatchImageTab(QWidget):
                 os.makedirs(os.path.dirname(txt_path), exist_ok=True)
                 with open(txt_path, "w", encoding="utf-8") as f:
                     f.write(tags)
+                saved += 1
+            self.mw.status_bar.showMessage(f"已保存 {saved} 个 .txt 文件", 5000)
 
         elif fmt == 1:  # 合并 .txt
             save_path = os.path.join(output_dir or self.folder_input.text(), "tags_all.txt")
             with open(save_path, "w", encoding="utf-8") as f:
                 for img_path, tags in self._batch_results:
                     f.write(f"{os.path.basename(img_path)}\t{tags}\n")
+            self.mw.status_bar.showMessage(f"已保存合并 .txt: {save_path}", 5000)
 
         elif fmt == 2:  # 合并 .csv
             save_path = os.path.join(output_dir or self.folder_input.text(), "tags_all.csv")
@@ -1212,10 +1258,7 @@ class BatchImageTab(QWidget):
                 writer.writerow(["filename", "tags"])
                 for img_path, tags in self._batch_results:
                     writer.writerow([os.path.basename(img_path), tags])
-
-        self.mw.status_bar.showMessage(
-            f"已保存 {len(self._batch_results)} 个打标结果", 5000
-        )
+            self.mw.status_bar.showMessage(f"已保存合并 .csv: {save_path}", 5000)
         QMessageBox.information(self, "保存完成",
                                 f"已保存 {len(self._batch_results)} 个打标结果")
 
