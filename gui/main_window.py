@@ -344,7 +344,7 @@ class BatchTagThread(QThread):
                             self.exclude_tags,
                             self.cat_flags,
                         )
-                        tags = [t[0] for t in tag_results]
+                        tags = [t[0].replace("_", " ") for t in tag_results]
                         if self.trigger_words.strip():
                             tw_list = [w.strip() for w in self.trigger_words.split(",") if w.strip()]
                             tags = tw_list + tags
@@ -871,7 +871,7 @@ class SingleImageTab(QWidget):
                 html += (
                     f'<span style="background-color:#313244;border-radius:4px;'
                     f'padding:2px 8px;margin:2px;display:inline-block;">'
-                    f'{tag} '
+                    f'{tag.replace("_", " ")} '
                     f'<span style="font-size:10px;color:{c};">{conf:.1%}</span>'
                     f'</span> '
                 )

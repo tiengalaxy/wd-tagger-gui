@@ -283,7 +283,7 @@ def extract_tags_flat(
     """提取标签并返回逗号分隔字符串。"""
     tags = extract_tags(probs, tag_names, categories, threshold, character_threshold,
                         exclude_tags, cat_flags)
-    return ", ".join(t[0] for t in tags)
+    return ", ".join(t[0].replace("_", " ") for t in tags)
 
 
 # ─── 文件查找 ─────────────────────────────────────────────
@@ -394,7 +394,7 @@ class WDTagger:
         )
 
         # 插入 trigger words
-        tags = [t[0] for t in tag_results]
+        tags = [t[0].replace("_", " ") for t in tag_results]
         if trigger_words.strip():
             tw_list = [w.strip() for w in trigger_words.split(",") if w.strip()]
             # trigger words 放最前面
@@ -434,7 +434,7 @@ class WDTagger:
                         probs[j], self.tag_names, self.categories,
                         threshold, character_threshold, exclude_tags, cat_flags,
                     )
-                    tags = [t[0] for t in tag_results]
+                    tags = [t[0].replace("_", " ") for t in tag_results]
                     if trigger_words.strip():
                         tw_list = [w.strip() for w in trigger_words.split(",") if w.strip()]
                         tags = tw_list + tags
