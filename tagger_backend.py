@@ -141,7 +141,7 @@ def download_model(
     progress_callback: Optional[callable] = None,
 ) -> tuple[str, str]:
     """从 HuggingFace 下载模型文件，返回 (model_path, tags_path)。"""
-    hf_hub_download = _get_hf_hub_download()
+    hf_hub_download = _get_hf_hub()
 
     local_dir = os.path.join(cache_dir, model_name.replace("/", "_"))
     safe_local_dir = local_dir  # 保留非 ASCII 路径
