@@ -15,8 +15,8 @@ from PyQt6.QtCore import (
     Qt, QThread, pyqtSignal, QTimer, QSize, QUrl,
 )
 from PyQt6.QtGui import (
-    QPixmap, QFont, QIcon, QTextCursor, QPalette, QColor,
-    QDragEnterEvent, QDropEvent,
+    QPixmap, QFont, QIcon, QTextCursor, QPalette, QColor, QImage,
+    QDragEnterEvent, QDropEvent, QKeyEvent,
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -671,7 +671,7 @@ class SingleImageTab(QWidget):
         left_layout.setContentsMargins(0, 0, 4, 0)
 
         # 缩略图预览
-        self.image_label = QLabel("拖放图片到此处\n或点击下方按钮选择")
+        self.image_label = QLabel("拖放图片到此处\n或点击下方按钮选择\nCtrl+V 粘贴剪贴板图片")
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setMinimumSize(400, 400)
         self.image_label.setStyleSheet(
@@ -687,6 +687,11 @@ class SingleImageTab(QWidget):
         self.open_btn.setObjectName("primaryBtn")
         self.open_btn.clicked.connect(self._on_open_image)
         btn_row.addWidget(self.open_btn)
+
+        self.paste_btn = QPushButton("📋 粘贴图片")
+        self.paste_btn.setToolTip("Ctrl+V 从剪贴板粘贴图片")
+        self.paste_btn.clicked.connect(self._on_paste_image)
+        btn_row.addWidget(self.paste_btn)
 
         self.tag_btn = QPushButton("🏷️ 开始打标")
         self.tag_btn.setObjectName("successBtn")
@@ -768,6 +773,26 @@ class SingleImageTab(QWidget):
         )
         if path:
             self._load_image(path)
+
+    def _on_paste_image(self):
+        """从剪贴板读取图片并加载。"""
+        clipboard = QApplication.clipboard()
+        mime = clipboard.mimeData()
+        image = clipboard.image()
+        if not image.isNull():
+            import tempfile
+            temp_path = os.path.join(tempfile.gettempdir(), "wd_tagger_pasted.png")
+            image.save(temp_path, "PNG")
+            self._load_image(temp_path)
+            self.mw.status_bar.showMessage("已从剪贴板粘贴图片", 3000)
+        elif mime.hasUrls():
+            path = mime.urls()[0].toLocalFile()
+            if Path(path).suffix.lower() in IMAGE_EXTENSIONS:
+                self._load_image(path)
+            else:
+                QMessageBox.warning(self, "剪贴板", "剪贴板中的文件不是支持的图片格式")
+        else:
+            QMessageBox.information(self, "剪贴板", "剪贴板中没有检测到图片")
 
     def _load_image(self, path: str):
         self.mw.current_image_path = path
@@ -940,15 +965,33 @@ class SingleImageTab(QWidget):
             self.mw.status_bar.showMessage(f"已保存: {path}", 3000)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasImage():
+            event.acceptProposedAction()
+            return
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
     def dropEvent(self, event: QDropEvent):
+        if event.mimeData().hasImage():
+            image = event.mimeData().imageData()
+            if isinstance(image, QImage):
+                import tempfile
+                temp_path = os.path.join(tempfile.gettempdir(), "wd_tagger_dropped.png")
+                image.save(temp_path, "PNG")
+                self._load_image(temp_path)
+            return
         urls = event.mimeData().urls()
         if urls:
             path = urls[0].toLocalFile()
             if Path(path).suffix.lower() in IMAGE_EXTENSIONS:
                 self._load_image(path)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        """Ctrl+V 粘贴图片。"""
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_V:
+            self._on_paste_image()
+        else:
+            super().keyPressEvent(event)
 
 
 # ─── 批量打标标签页 ─────────────────────────────────────────
