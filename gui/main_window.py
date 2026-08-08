@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
 
 from tagger_backend import (
     WDTagger, AVAILABLE_MODELS, IMAGE_EXTENSIONS,
-    get_available_providers, has_cuda, detect_device,
+    get_available_providers, has_cuda, has_gpu, detect_device,
     CAT_GENERAL, CAT_ARTIST, CAT_COPYRIGHT, CAT_CHARACTER, CAT_RATING,
     find_images, DEFAULT_CACHE, preprocess_batch, extract_tags,
 )
@@ -277,16 +277,19 @@ class TaggerLoadThread(QThread):
     finished = pyqtSignal(bool, str)  # success, error_msg
 
     def __init__(self, tagger: WDTagger, model_id: str, use_gpu: bool,
-                 cache_dir: str, local_model_dir: str | None = None):
+                 cache_dir: str, device: str = "cpu",
+                 local_model_dir: str | None = None):
         super().__init__()
         self.tagger = tagger
         self.model_id = model_id
         self.use_gpu = use_gpu
         self.cache_dir = cache_dir
+        self.device = device
         self.local_model_dir = local_model_dir
 
     def run(self):
         try:
+            self.tagger.device = self.device
             self.tagger.load(
                 model_id=self.model_id,
                 use_gpu=self.use_gpu,
@@ -447,7 +450,7 @@ class MainWindow(QMainWindow):
         self.model_combo.setCurrentIndex(0)
         row1.addWidget(self.model_combo)
 
-        self.gpu_check = QCheckBox("GPU (CUDA)")
+        self.gpu_check = QCheckBox("GPU 加速")
         self.gpu_check.setChecked(False)
         row1.addWidget(self.gpu_check)
 
@@ -583,12 +586,13 @@ class MainWindow(QMainWindow):
 
         model_id = model_data["id"]
         use_gpu = self.gpu_check.isChecked()
+        device = detect_device() if use_gpu else "cpu"
         self.load_model_btn.setEnabled(False)
         self.model_status.setText("下载中...")
         self.model_status.setStyleSheet("color: #f9e2af; font-style: italic;")
 
         self.load_thread = TaggerLoadThread(
-            self.tagger, model_id, use_gpu, DEFAULT_CACHE
+            self.tagger, model_id, use_gpu, DEFAULT_CACHE, device
         )
         self.load_thread.progress.connect(self._on_load_progress)
         self.load_thread.finished.connect(self._on_load_finished)
@@ -602,7 +606,15 @@ class MainWindow(QMainWindow):
         self.load_model_btn.setEnabled(True)
 
         if success:
-            device = "CUDA" if self.tagger.use_gpu else "CPU"
+            active_providers = self.tagger.session.get_providers()
+            if "CUDAExecutionProvider" in active_providers:
+                device = "CUDA"
+            elif "DmlExecutionProvider" in active_providers:
+                device = "DirectML"
+            elif "ROCMExecutionProvider" in active_providers:
+                device = "ROCm"
+            else:
+                device = "CPU"
             self.model_status.setText(f"✅ 已加载 ({device}, {self.tagger.tag_count} 标签)")
             self.model_status.setStyleSheet("color: #a6e3a1;")
             self.status_bar.showMessage(

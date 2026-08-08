@@ -2,4 +2,10 @@ PyQt6>=6.6.0
 Pillow>=10.0.0
 numpy>=1.24.0
 huggingface_hub>=0.20.0
-onnxruntime>=1.17.0
+# GPU 加速（二选一）:
+#   DirectML 版 — 无需安装 CUDA，支持所有显卡 (NVIDIA/AMD/Intel)
+onnxruntime-directml>=1.20.0
+#   CUDA 版   — 需要自行安装 CUDA 12 + cuDNN 9
+# onnxruntime-gpu>=1.20.0
+# CPU 版（无 GPU）:
+# onnxruntime>=1.17.0

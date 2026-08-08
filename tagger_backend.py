@@ -114,6 +114,14 @@ def get_available_providers() -> list[str]:
         return []
 
 
+def has_gpu() -> bool:
+    """检测是否有任何 GPU 推理能力（CUDA / DirectML / ROCm）。"""
+    providers = get_available_providers()
+    return any(p in providers for p in (
+        "CUDAExecutionProvider", "DmlExecutionProvider", "ROCMExecutionProvider"
+    ))
+
+
 def has_cuda() -> bool:
     """检测 CUDA 是否可用。"""
     return "CUDAExecutionProvider" in get_available_providers()
@@ -186,20 +194,34 @@ def download_model(
 
 
 def load_model(
-    model_path: str, use_gpu: bool = False
+    model_path: str, use_gpu: bool = False, device: str = "cpu"
 ) -> "ort.InferenceSession":
-    """加载 ONNX 模型。"""
+    """加载 ONNX 模型。device 可选: cuda, directml, rocm, cpu。"""
     ort = _get_ort()
-    providers = (
-        ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        if use_gpu
-        else ["CPUExecutionProvider"]
-    )
+    if use_gpu:
+        if device == "cuda":
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        elif device == "directml":
+            providers = ["DmlExecutionProvider", "CPUExecutionProvider"]
+        elif device == "rocm":
+            providers = ["ROCMExecutionProvider", "CPUExecutionProvider"]
+        else:
+            providers = ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"]
+    else:
+        providers = ["CPUExecutionProvider"]
     try:
         session = ort.InferenceSession(model_path, providers=providers)
+        used_providers = session.get_providers()
+        # 如果请求了 GPU 但实际只用 CPU，打印警告
+        if use_gpu and not any(p in used_providers for p in (
+            "CUDAExecutionProvider", "DmlExecutionProvider", "ROCMExecutionProvider"
+        )):
+            import warnings
+            warnings.warn(f"GPU session fell back to CPU. Active providers: {used_providers}")
     except Exception as e:
         if use_gpu:
-            # 回退到 CPU
+            import warnings
+            warnings.warn(f"GPU session creation failed ({e}), falling back to CPU")
             session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
         else:
             raise
@@ -319,6 +341,7 @@ class WDTagger:
         self.input_name: str = ""
         self.model_name: str = ""
         self.use_gpu: bool = False
+        self.device: str = "cpu"   # cuda / directml / rocm / cpu
         self._model_path: str = ""
         self._tags_path: str = ""
         self._model_loaded: bool = False
@@ -354,7 +377,7 @@ class WDTagger:
 
         if progress_callback:
             progress_callback("加载 ONNX 模型...")
-        self.session = load_model(self._model_path, use_gpu)
+        self.session = load_model(self._model_path, use_gpu, self.device)
         self.input_name = self.session.get_inputs()[0].name
         self.tag_names, self.categories = load_tags(self._tags_path)
         self.model_name = model_id
